@@ -1,0 +1,637 @@
+// Data file for Mano Basic Computer
+
+bus, name BUS, size 16, inputCount 7
+
+ram, name M, size 4096 16, control Read Write, destination BUS 7
+
+register, name   AR, size 12, control LD INR CLR, destination BUS 1
+register, name   PC, size 16, control LD INR CLR, destination BUS 2
+register, name   DR, size 16, control LD INR CLR, destination BUS 3
+register, name   AC, size 16, control LD INR CLR, destination BUS 4
+register, name   IR, size 16, control LD        , destination BUS 5
+register, name   TR, size 16, control LD INR CLR, destination BUS 6
+register, name OUTR, size  8, control LD
+register, name INPR, size  8
+register, name   SC, size  4
+register, name CODE, size  3
+
+flag, name I
+flag, name S
+flag, name E, ALU CARRY
+flag, name R
+flag, name IEN
+flag, name FGI
+flag, name FGO
+
+ // default is output not busy
+setRegister, FGO, 1
+
+// 10: 1234 ABCD
+// 30: FF01 00AA
+// 100: 2107 7200 7020 1106 3108 7001 0053 ffe9 0000
+
+loadRam
+21: 083 7001 7001
+83: 50
+50: b8f2
+endLoadRam
+
+setRegister, INPR, 8c
+setRegister, FGI, 0
+setRegister, AC, A937
+setRegister, E, 1
+setRegister, PC, 21
+PCStart, PC, 21
+
+RTLinstructions
+// A note to be ignored
+00000, s, t 0, SC 0, IEN 0, R 0, S 1
+00001, h, t 0, S 0
+00100, f 00000
+
+// output processing
+00110, f 00100, c FGO == 0, FGO 1, SimulatorOutput < OUTR, n 00120
+00115, f 00100, c FGO != 0, n 00120
+
+00120, f 00110, f 00115
+
+// input processing
+00150, f 00120, c SimulatorHasInput == 1, c FGI == 0, FGI 1, INPR < SimulatorInput, SimulatorHasInput 0, n 00200
+00151, f 00120, c SimulatorHasInput == 1, c FGI != 0, n 00200
+00155, f 00120, c SimulatorHasInput != 1, n 00200
+
+// start main instruction cycle
+00200, f 00150, f 00151, f 00155
+
+// interrupt processing - t0 - t2
+20000, f 00200, t 0,c R == 1, AR 0, TR < PC, SC ++
+21000, f 20000, t 1, M AR < TR, PC 0, SC ++
+22000, f 21000, t 2, PC ++, IEN 0, R 0, SC 0, n 100
+
+// regular processing - t0 - t2
+10000, f 00200, t 0,c R == 0, AR < PC, SC ++
+11000, f 10000, t 1, IR < M AR, PC ++, SC ++
+12000, f 11000, t 2, I < IR 15, CODE < IR 12 14, AR < IR 0 11, SC ++
+
+// instruction decoding
+13000, f 12000, t 3,c CODE != 7
+13010, f 13000, t 3,c I == 0, SC ++
+13020, f 13000, t 3,c I == 1, AR < M AR, SC ++
+
+// interesting parts of instructions
+14000, f 13010, f 13020, t 4,c CODE == 0, DR < M AR, SC ++
+15000, f 14000, t 5,  AC < AC ALU_And DR, SC 0, n 100
+
+14010, f 13010, f 13020, t 4,c CODE == 1, DR < M AR, SC ++
+15010, f 14010, t 5,  AC < AC ALU_Add DR E, SC 0, n 100 
+
+14020, f 13010, f 13020, t 4,c CODE == 2, DR < M AR, SC ++
+15020, f 14020, t 5, AC < DR, SC 0, n 100
+
+14030, f 13010, f 13020, t 4, c CODE == 3, M AR < AC, SC 0, n 100
+
+14040, f 13010, f 13020, t 4, c CODE == 4, PC < AR, SC 0, n 100
+
+14050, f 13010, f 13020, t 4, c CODE == 5, M AR < PC, AR ++, SC ++
+15050, f 14050, t 5, PC < AR, SC 0, n 100
+
+14060, f 13010, f 13020, t 4, c CODE == 6, DR < M AR, SC ++
+15060, f 14060, t 5, DR ++, SC ++
+16060, f 15060, t 6,c DR == 0, M AR < DR, PC ++, SC 0, n 100
+16065, f 15060, t 6,c DR != 0, M AR < DR, SC 0, n 100
+
+// I/O (I==1, IR=Fxxx) vs register instructions (IR=7xxx)
+13030, f 12000, t 3,c CODE == 7
+
+// Register instructions, 7xxx
+13100, f 13030, t 3,c IR == x7800, AC 0, SC 0, n 100
+13110, f 13030, t 3,c IR == x7400, E 0, SC 0, n 100
+13120, f 13030, t 3,c IR == x7200, AC < AC ALU_Complement, SC 0, n 100
+13130, f 13030, t 3,c IR == x7100, E < E ALU_Complement, SC 0, n 100
+13140, f 13030, t 3,c IR == x7080, AC < AC ALU_ShiftRightWithCarry E, SC 0, n 100
+13150, f 13030, t 3,c IR == x7040, AC < AC ALU_ShiftLeftWithCarry E, SC 0, n 100
+13160, f 13030, t 3,c IR == x7020, AC ++, SC 0, n 100
+13170, f 13030, t 3,c IR == x7010, c AC 15 == 0, PC ++, SC 0, n 100
+13175, f 13030, t 3,c IR == x7010, c AC 15 == 1, SC 0, n 100
+13180, f 13030, t 3,c IR == x7008, c AC 15 == 1, PC ++, SC 0, n 100
+13185, f 13030, t 3,c IR == x7008, c AC 15 == 0, SC 0, n 100
+13190, f 13030, t 3,c IR == x7004, c AC == 0, PC ++, SC 0, n 100
+13195, f 13030, t 3,c IR == x7004, c AC != 0, SC 0, n 100
+13200, f 13030, t 3,c IR == x7002, c E == 0, PC ++, SC 0, n 100
+13205, f 13030, t 3,c IR == x7002, c E != 0, SC 0, n 100
+13210, f 13030, t 3,c IR == x7001, SC 0, n 1, // halt
+
+// I/O instructions, Fxxx
+13220, f 13030, t 3,c IR == xF800, AC 0 7 < INPR, FGI 0, SC 0, n 100
+13230, f 13030, t 3,c IR == xF400, OUTR < AC 0 7, FGO 0, SC 0, n 100
+13240, f 13030, t 3,c IR == xF200, c FGI == 1, PC ++, SC 0, n 100
+13245, f 13030, t 3,c IR == xF200, c FGI != 1, SC 0, n 100
+13250, f 13030, t 3,c IR == xF100, c FGO == 1, PC ++, SC 0, n 100
+13255, f 13030, t 3,c IR == xF100, c FGO != 1, SC 0, n 100
+13260, f 13030, t 3,c IR == xF080, IEN 1, SC 0, n 100
+13270, f 13030, t 3,c IR == xF040, IEN 0, SC 0, n 100
+endInstructions
+
+// Start of next instruction state:
+InstructionCycleStart, 200
+
+assembler
+word, bytes 2
+format, name f1, words 1, fieldCount 0, codeBits 0 15
+format, name f2, words 1, fieldCount 1, codeBits 12 15, f1 0 11 value label
+format, name f3, words 1, fieldCount 2, codeBits 12 15, f2 0 11 value label
+
+AND, f2, 0000
+AND, f3, 8000
+ADD, f2, 1000
+ADD, f3, 9000
+LDA, f2, 2000
+LDA, f3, A000
+STA, f2, 3000
+STA, f3, B000
+BUN, f2, 4000
+BUN, f3, C000
+BSA, f2, 5000
+BSA, f3, D000
+ISZ, f2, 6000
+ISZ, f3, E000
+CLA, f1, 7800
+CLE, f1, 7400
+CMA, f1, 7200
+CME, f1, 7100
+CIR, f1, 7080
+CIL, f1, 7040
+INC, f1, 7020
+SPA, f1, 7010
+SNA, f1, 7008
+SZA, f1, 7004
+SZE, f1, 7002
+HLT, f1, 7001
+INP, f1, F800
+OUT, f1, F400
+SKI, f1, F200
+SKO, f1, F100
+ION, f1, F080
+IOF, f1, F040
+endAssembler
+
+helpComputer
+<html><body>
+ComputerSimulator - Mano basic computer Help
+<br>
+This computer is defined in
+<br>
+Computer System Architecture, 3rd edition
+<br>
+by M. Morris Mano
+<br>
+Published by Prentice-Hall, c 1993
+<br>
+Chapter 5, pp 123-172.
+<p>
+Mano describes the assembly language for this computer
+in Chapter 6, pp 173-212. <br>
+</p>
+<p>Architecture (pg 157)</p>
+<ol>
+<li>A memory unit with 4096 words, 16 bits each</li>
+<li>Nine registers, with length in bits in parentheses: AR (12), PC
+(12), DR (16), AC (16), IR (16), TR (16), OUTR (8), INPR (8), and SC
+(4).</li>
+<li>Seven flip-flops:</li>
+<ol type="a">
+<li>I (pg 126) interrupt enable</li>
+<li>S (pg 144) stop (0)/go (1)</li>
+<li>E (pg 131) carry-out bit from ALU</li>
+<li>R (pg 154) interrupt raised</li>
+<li>IEN (pg 153) interrupt enabled<br>
+</li>
+<li>FGI (pg 151) input register available</li>
+<li>FGO (pg 152) output register available</li>
+</ol>
+<li>Two decoders: 3x8 operation decoder, 4x16 timing decoder</li>
+<li>A 16-bit common bus</li>
+<li>Control logic gates</li>
+<li>ALU connected to AC input<br>
+</li>
+</ol>
+<p>The instructions are (pg 133) - defined in detail on pg 159</p>
+<table border="1" cellpadding="5" cellspacing="0">
+<tbody>
+<tr>
+<td align="center" valign="top">Type<br>
+</td>
+<td align="center" valign="top">Symbol<br>
+</td>
+<td colspan="2" rowspan="1" align="center" valign="top">Hex code<br>
+</td>
+<td align="center" valign="top">Description<br>
+</td>
+<td align="center" valign="top">Register Transfer Language<br>
+</td>
+</tr>
+<tr>
+<td colspan="1" rowspan="7" align="center" valign="top">Memory<br>
+</td>
+<td align="center" valign="top"><tt>AND<br>
+</tt></td>
+<td align="center" valign="top"><tt>0xxx<br>
+</tt></td>
+<td valign="top"><tt>8xxx<br>
+</tt></td>
+<td valign="top">AND memory word with AC<br>
+</td>
+<td valign="top"><tt>AC &lt;-- AC and M[xxx] (or M[M[xxx]])<br>
+</tt></td>
+</tr>
+<tr>
+<td align="center" valign="top"><tt>ADD<br>
+</tt></td>
+<td align="center" valign="top"><tt>1xxx<br>
+</tt></td>
+<td valign="top"><tt>9xxx<br>
+</tt></td>
+<td valign="top">ADD memory word with AC<br>
+</td>
+<td valign="top"><tt>AC &lt;-- AC + M[xxx] (or M[M[xxx]])</tt></td>
+</tr>
+<tr>
+<td align="center" valign="top"><tt>LDA<br>
+</tt></td>
+<td align="center" valign="top"><tt>2xxx<br>
+</tt></td>
+<td valign="top"><tt>Axxx<br>
+</tt></td>
+<td valign="top">Load AC from memory word<br>
+</td>
+<td valign="top"><tt>AC &lt;-- M[xxx] (or M[M[xxx]])</tt></td>
+</tr>
+<tr>
+<td align="center" valign="top"><tt>STA<br>
+</tt></td>
+<td align="center" valign="top"><tt>3xxx<br>
+</tt></td>
+<td valign="top"><tt>Bxxx<br>
+</tt></td>
+<td valign="top">Store AC to memory word<br>
+</td>
+<td valign="top"><tt>M[xxx] &lt;-- AC (or M[M[xxx]])</tt></td>
+</tr>
+<tr>
+<td align="center" valign="top"><tt>BUN<br>
+</tt></td>
+<td align="center" valign="top"><tt>4xxx<br>
+</tt></td>
+<td valign="top"><tt>Cxxx<br>
+</tt></td>
+<td valign="top">Branch unconditionally<br>
+</td>
+<td valign="top"><tt>PC &lt;-- M[xxx] (or M[M[xxx]])</tt></td>
+</tr>
+<tr>
+<td align="center" valign="top"><tt>BSA<br>
+</tt></td>
+<td align="center" valign="top"><tt>5xxx<br>
+</tt></td>
+<td valign="top"><tt>Dxxx<br>
+</tt></td>
+<td valign="top">Branch and save return address<br>
+</td>
+<td valign="top"><tt>M[xxx] &lt;-- PC (or M[M[xxx]])<br>
+PC &lt;-- M[xxx] + 1<br>
+</tt></td>
+</tr>
+<tr>
+<td align="center" valign="top"><tt>ISZ<br>
+</tt></td>
+<td align="center" valign="top"><tt>6xxx<br>
+</tt></td>
+<td valign="top"><tt>Exxx<br>
+</tt></td>
+<td valign="top">Increment and skip if 0<br>
+</td>
+<td valign="top"><tt>M[xxx] &lt;-- M[xxx] + 1 (or M[M[xxx]])<br>
+if (M[xxx] = 0) then PC &lt;-- PC + 1<br>
+</tt></td>
+</tr>
+<tr>
+<td colspan="1" rowspan="12" align="center" valign="top">Register<br>
+</td>
+<td align="center" valign="top"><tt>CLA<br>
+</tt></td>
+<td colspan="2" rowspan="1" align="center" valign="top"><tt>7800<br>
+</tt></td>
+<td valign="top">Clear AC<br>
+</td>
+<td valign="top"><tt>AC &lt;-- 0<br>
+</tt></td>
+</tr>
+<tr>
+<td align="center" valign="top"><tt>CLE<br>
+</tt></td>
+<td colspan="2" rowspan="1" align="center" valign="top"><tt>7400<br>
+</tt></td>
+<td valign="top">Clear E<br>
+</td>
+<td valign="top"><tt>E &lt;-- 0<br>
+</tt></td>
+</tr>
+<tr>
+<td align="center" valign="top"><tt>CMA<br>
+</tt></td>
+<td colspan="2" rowspan="1" align="center" valign="top"><tt>7200<br>
+</tt></td>
+<td valign="top">Complement AC<br>
+</td>
+<td valign="top"><tt>AC &lt;-- not AC (1's complement)<br>
+</tt></td>
+</tr>
+<tr>
+<td align="center" valign="top"><tt>CME<br>
+</tt></td>
+<td colspan="2" rowspan="1" align="center" valign="top"><tt>7100<br>
+</tt></td>
+<td valign="top">Complement E<br>
+</td>
+<td valign="top"><tt>E &lt;-- not E<br>
+</tt></td>
+</tr>
+<tr>
+<td align="center" valign="top"><tt>CIR<br>
+</tt></td>
+<td colspan="2" rowspan="1" align="center" valign="top"><tt>7080<br>
+</tt></td>
+<td valign="top">Right circular shift AC and E<br>
+</td>
+<td valign="top"><tt>AC (0-14) &lt;-- AC (1-15)<br>
+AC (15) &lt;-- E<br>
+E &lt;-- AC (0)<br>
+</tt></td>
+</tr>
+<tr>
+<td align="center" valign="top"><tt>CIL<br>
+</tt></td>
+<td colspan="2" rowspan="1" align="center" valign="top"><tt>7040<br>
+</tt></td>
+<td valign="top">Left circular shift AC and E<br>
+</td>
+<td valign="top"><tt>AC (1-15) &lt;-- AC (0-14)<br>
+
+AC (0) &lt;-- E<br>
+
+E &lt;-- AC (15)</tt></td>
+</tr>
+<tr>
+<td align="center" valign="top"><tt>INC<br>
+</tt></td>
+<td colspan="2" align="center" valign="top"><tt>7020<br>
+</tt></td>
+<td valign="top">Increment AC<br>
+</td>
+<td valign="top"><tt>AC &lt;-- AC + 1<br>
+</tt></td>
+</tr>
+<tr>
+<td align="center" valign="top"><tt>SPA<br>
+</tt></td>
+<td colspan="2" align="center" valign="top"><tt>7010<br>
+</tt></td>
+<td valign="top">Skip if AC is non-negative<br>
+</td>
+<td valign="top"><tt>if (AC(15) = 0) PC &lt;-- PC + 1<br>
+</tt></td>
+</tr>
+<tr>
+<td align="center" valign="top"><tt>SNA<br>
+</tt></td>
+<td colspan="2" align="center" valign="top"><tt>7008<br>
+</tt></td>
+<td valign="top">Skip if AC is negative<br>
+</td>
+<td valign="top"><tt>if (AC(15) = 1) PC &lt;-- PC + 1<br>
+</tt></td>
+</tr>
+<tr>
+<td align="center" valign="top"><tt>SZA<br>
+</tt></td>
+<td colspan="2" align="center" valign="top"><tt>7004<br>
+</tt></td>
+<td valign="top">Skip if AC is zero<br>
+</td>
+<td valign="top"><tt>if (AC = 0) PC &lt;-- PC + 1<br>
+</tt></td>
+</tr>
+<tr>
+<td align="center" valign="top"><tt>SZE<br>
+</tt></td>
+<td colspan="2" align="center" valign="top"><tt>7002<br>
+</tt></td>
+<td valign="top">Skip if E is zero</td>
+<td valign="top"><tt>if (E = 0) PC &lt;-- PC + 1<br>
+</tt></td>
+</tr>
+<tr>
+<td align="center" valign="top"><tt>HLT<br>
+</tt></td>
+<td colspan="2" align="center" valign="top"><tt>7001<br>
+</tt></td>
+<td valign="top">Halt computer<br>
+</td>
+<td valign="top"><tt>S &lt;-- 0<br>
+</tt></td>
+</tr>
+<tr>
+<td colspan="1" rowspan="6" align="center" valign="top">Input/Output<br>
+</td>
+<td align="center" valign="top"><tt>INP<br>
+</tt></td>
+<td colspan="2" align="center" valign="top"><tt>F800<br>
+</tt></td>
+<td valign="top">Input character to AC<br>
+</td>
+<td valign="top"><tt>AC &lt;-- INPR<br>
+</tt></td>
+</tr>
+<tr>
+<td align="center" valign="top"><tt>OUT<br>
+</tt></td>
+<td colspan="2" align="center" valign="top"><tt>F400<br>
+</tt></td>
+<td valign="top">Output character to AC<br>
+</td>
+<td valign="top"><tt>OUTR &lt;-- AC<br>
+</tt></td>
+</tr>
+<tr>
+<td align="center" valign="top"><tt>SKI<br>
+</tt></td>
+<td colspan="2" align="center" valign="top"><tt>F200<br>
+</tt></td>
+<td valign="top">Skip on input flag<br>
+</td>
+<td valign="top"><tt>if (FGI = 1) PC &lt;-- PC + !<br>
+</tt></td>
+</tr>
+<tr>
+<td align="center" valign="top"><tt>SKO<br>
+</tt></td>
+<td colspan="2" align="center" valign="top"><tt>F100<br>
+</tt></td>
+<td valign="top">Skip on output flag<br>
+</td>
+<td valign="top"><tt>if (FGO = 1) PC &lt;-- PC + 1<br>
+</tt></td>
+</tr>
+<tr>
+<td align="center" valign="top"><tt>ION<br>
+</tt></td>
+<td colspan="2" align="center" valign="top"><tt>F080<br>
+</tt></td>
+<td valign="top">Interrupt on<br>
+</td>
+<td valign="top"><tt>IEN &lt;--- 1<br>
+</tt></td>
+</tr>
+<tr>
+<td align="center" valign="top"><tt>IOF<br>
+</tt></td>
+<td colspan="2" align="center" valign="top"><tt>F040<br>
+</tt></td>
+<td valign="top">Interrupt off<br>
+</td>
+<td valign="top"><tt>IEN &lt;-- 0<br>
+</tt></td>
+</tr>
+</tbody>
+</table>
+<p><br>
+</p>
+</body></html>
+endHelp
+
+more stuff
+
+helpAssembler
+<html>
+<body>ComputerSimulator - Mano basic computer Assembly Language Help
+<br>
+
+This computer is defined in
+<br>
+
+Computer System Architecture, 3rd edition
+<br>
+
+by M. Morris Mano
+<br>
+
+Published by Prentice-Hall, c 1993
+<br>
+
+Chapter 5, pp 123-172.
+<p>
+Mano describes the assembly language for this computer
+in Chapter 6, pp 173-212. <br>
+</p>
+<h2>General notes:</h2>
+<ol>
+<li>Format - the label must be in the first column<br>
+&lt;label opt&gt; &lt;code&gt; &lt;address opt&gt; &lt;I opt&gt; [/&lt;comments&gt;]</li>
+<li>Pseudo instructions:</li>
+<ol type="a">
+<li>SETPCSTART &lt;address&gt;<br>
+</li>
+<li>ORG &lt;address in hex&gt;</li>
+<li>END</li>
+<li>DEC &lt;data word in decimal, -32768 through 32767&gt;</li>
+<li>HEX &lt;data word in HEX, 0000 - FFFF&gt;</li>
+</ol>
+</ol>
+<h2>Examples:</h2>
+<h3>Subtracting two numbers (pg 181)</h3>
+<pre>
+/ computing A - B
+    SETPCSTART 100
+    ORG 100
+    LDA SUB  / get B
+    CMA      / 1's complement of B
+    INC      / 2's complement of B
+    ADD MIN  / add A
+    STA DIF  / save result
+    HLT
+MIN DEC 83
+SUB DEC -23
+DIF HEX 0
+    END
+</pre>
+<h3>Adding an array of 10 number (original is 100, but this example is good enough to get the idea) (pg 191)</h3>
+<pre>
+    SETPCSTART 100
+    ORG 100
+    LDA ADS
+    STA PTR
+    LDA NBR
+    STA CTR
+
+LOP ADD PTR I
+    ISZ PTR
+    ISZ CTR
+    BUN LOP
+    STA SUM
+    HLT
+
+ADS HEX 150
+PTR HEX 0
+NBR DEC -10
+CTR HEX 0
+SUM HEX 0
+
+    ORG 150 / array of 10 values
+    DEC 23
+    DEC 14
+    DEC 21
+    DEC -16
+    DEC 38
+    DEC -249
+    DEC 103
+    DEC 56
+    DEC 78
+    DEC 93
+    END
+</pre>
+
+<h3>Subroutine with parameter (pg 201)</h3>
+
+<pre>
+/ compute A or B in a subroutine
+/ using DeMorgan's law:
+/ A or B = (A' and B')'
+    SETPCSTART 100
+    ORG 100
+    LDA X     / put A in AC
+    BSA OR    / call subroutine
+    HEX 3AF6  / here is B
+    STA Y     / result returned in AC
+    HLT
+
+X   HEX 7B95
+Y   HEX 0
+
+/ A or B = (A' and B')'
+OR  HEX 0     / start of subroutine
+    CMA       / A'
+    STA TMP   / tmp = A'
+    LDA OR I  / get B
+    CMA       / B'
+    AND TMP   / AC <-- A' and B'
+    CMA       / (A' and B')'
+    ISZ OR    / increment return address, skip parameter
+    BUN OR I  / return from subroutine
+TMP HEX 0
+    END
+</pre>
+<h3>End of page</h3>
+
+</body></html>
+endHelp
+
